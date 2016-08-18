@@ -18,8 +18,14 @@ class FPIWindow(Gtk.Window):
         Gtk.Window.__init__(self, title="FotochoPI")
         self.set_border_width(10)
 
+        grid = Gtk.Grid()
+        self.add(grid)
+
         hbox = Gtk.Box(spacing=6)
-        self.add(hbox)
+        imgbox = Gtk.Box()
+        imgbox.set_border_width(10) # TODO ajeitar essa borda
+        grid.add(hbox)
+        grid.attach_next_to(imgbox, hbox, Gtk.PositionType.BOTTOM, 1, 2)
 
         button = Gtk.Button.new_with_mnemonic("_Open")
         button.connect("clicked", self.on_file_clicked)
@@ -46,7 +52,7 @@ class FPIWindow(Gtk.Window):
         hbox.pack_start(button, True, True, 0)
 
         self.gtkimage = Gtk.Image()
-        hbox.add(self.gtkimage)
+        imgbox.add(self.gtkimage)
 
     def on_file_clicked(self, widget):
         dialog = Gtk.FileChooserDialog("Please choose a file", self,
