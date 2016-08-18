@@ -3,8 +3,8 @@
 
 # TODO melhorar interface:
 # TODO- exibir botões só quando a imagem já tiver sido carregada
-# TODO - colocar extensao automatica ao salvar se n estiver especificada
 # TODO - especificar dependencias e docuemntacao do codigo, dizer q suporta teclado. aceitar arrastar o mouse?
+# TODO passar um lint
 
 import gi
 import array
@@ -49,7 +49,6 @@ class FPIWindow(Gtk.Window):
         hbox.pack_start(button, True, True, 0)
 
         self.gtkimage = Gtk.Image()
-        self.gtkimage.set_from_file("pb.jpg")
         hbox.add(self.gtkimage)
 
     def on_file_clicked(self, widget):
@@ -149,8 +148,14 @@ class FPIWindow(Gtk.Window):
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
             print("Save clicked")
-            self.img.save(dialog.get_filename())
-            print("File saved: " + dialog.get_filename())
+            filename = dialog.get_filename()
+            # TODO this is not the best solution. If the filename
+            # already exists with ".jpg" and I enter the same name
+            # without the extension, it will overwrite without any alert
+            if not filename.endswith('.jpg'):
+                filename += '.jpg'
+            self.img.save(filename)
+            print("File saved: " + filename)
 
         elif response == Gtk.ResponseType.CANCEL:
             print("Cancel clicked")
