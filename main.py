@@ -1,19 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# TODO melhorar interface:
-# TODO- exibir botões só quando a imagem já tiver sido carregada
-# TODO - especificar dependencias e docuemntacao do codigo, dizer q suporta teclado. aceitar arrastar o mouse?
-# TODO passar um lint
+# TODO exibir botões só quando a imagem já tiver sido carregada?
+# TODO limitar imagem ao tamanho da tela
 
 import gi
-import array
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, GdkPixbuf
 from PIL import Image
 
 class FPIWindow(Gtk.Window):
-    img = "" # TODO how to initialize it correct?
+    img = "" # TODO how to initialize it correctly?
     pix = ""
     gtkimg = Gtk.Image
 
@@ -53,22 +50,22 @@ class FPIWindow(Gtk.Window):
 
     def on_file_clicked(self, widget):
         dialog = Gtk.FileChooserDialog("Please choose a file", self,
-            Gtk.FileChooserAction.OPEN,
-            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-             Gtk.STOCK_OPEN, Gtk.ResponseType.OK))
+                                       Gtk.FileChooserAction.OPEN,
+                                       (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                                        Gtk.STOCK_OPEN, Gtk.ResponseType.OK))
 
         self.add_filters(dialog)
 
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
-            print("Open clicked")
-            print("File selected: " + dialog.get_filename())
+            print "Open clicked"
+            print "File selected: " + dialog.get_filename()
             self.img = Image.open(dialog.get_filename())
-            self.pix = self.img.load();
-            self.gtkimage.set_from_pixbuf(image2pixbuf(self.img))
+            self.pix = self.img.load()
+            self.update_image()
 
         elif response == Gtk.ResponseType.CANCEL:
-            print("Cancel clicked")
+            print "Cancel clicked"
 
         dialog.destroy()
 
@@ -78,90 +75,91 @@ class FPIWindow(Gtk.Window):
         filter_jpeg.add_mime_type("image/jpeg")
         dialog.add_filter(filter_jpeg)
 
-    def on_click_me_clicked(self, button):
-        print("\"Click me\" button was clicked")
-
     def on_horizontal_clicked(self, button):
-        print("\"Horizontal\" button was clicked")
         original_img = self.img.copy()
         original_pix = original_img.load()
         width, height = self.img.size
         for i in range(width):
             for j in range(height):
-                self.pix[i,j] = original_pix[width-i-1,j]
+                self.pix[i, j] = original_pix[width-i-1, j]
 
-        self.gtkimage.set_from_pixbuf(image2pixbuf(self.img))
+        self.update_image()
 
     def on_vertical_clicked(self, button):
-        print("\"Vertical\" button was clicked")
         original_img = self.img.copy()
         original_pix = original_img.load()
         width, height = self.img.size
 
         for i in range(width):
             for j in range(height):
-                self.pix[i,j] = original_pix[i,height-j-1]
+                self.pix[i, j] = original_pix[i, height-j-1]
 
-        self.gtkimage.set_from_pixbuf(image2pixbuf(self.img))
+        self.update_image()
+
+    def apply_luminance(self):
+        original_img = self.img.copy()
+        original_pix = original_img.load()
+        width, height = self.img.size
+
+        for i in range(width):
+            for j in range(height):
+                r, g, b = original_pix[i, j]
+                cinza = int(0.299*r + 0.587*g + 0.114*b)
+                self.pix[i, j] = (cinza, cinza, cinza)
 
     def on_luminance_clicked(self, button):
-        print("\"Luminance\" button was clicked")
-        original_img = self.img.copy()
-        original_pix = original_img.load()
-        width, height = self.img.size
-
-        for i in range(width):
-            for j in range(height):
-                r, g, b = original_pix[i,j]
-                cinza = int(0.299*r + 0.587*g + 0.114*b)
-                self.pix[i,j] = (cinza, cinza, cinza)
-
-        self.gtkimage.set_from_pixbuf(image2pixbuf(self.img))
+        self.apply_luminance()
+        self.update_image()
 
     def on_quantization_clicked(self, button):
-        # TODO só deve funcionar com fotografia preto e branca? dar erro se n for preto e branca? ou aplicar luminanscia?
-        # TODO fazer otimizacao q manuel falou pra evitar que os extremos sejam usados sem necessidade
+        if not is_grayscale(self.img):
+            self.apply_luminance()
+
+        # TODO fazer otimizacao q manuel falou pra evitar que
+        # os extremos sejam usados sem necessidade
+        # TODO o extremo branco nao ta sendo usado! ajeitar isso
         # TODO colocar botao de range
-        print("\"Quantization\" button was clicked")
         original_img = self.img.copy()
         original_pix = original_img.load()
         width, height = self.img.size
 
-        ntons = 30
-
+        ntons = 4
         for i in range(width):
             for j in range(height):
-                color = int((original_pix[i,j][0]*100 / 256) * (256/ntons) )
-                print color
-                self.pix[i,j] = (color, color, color)
-
-        self.gtkimage.set_from_pixbuf(image2pixbuf(self.img))
+                color = int((original_pix[i, j][0]*ntons)/256 * 256/ntons)
+                """print original_pix[i, j][0],
+                print " => ",
+                print color"""
+                self.pix[i, j] = (color, color, color)
+        self.update_image()
 
     def on_save_clicked(self, widget):
         dialog = Gtk.FileChooserDialog("Please choose a file", self,
-            Gtk.FileChooserAction.SAVE,
-            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-             Gtk.STOCK_SAVE, Gtk.ResponseType.OK))
+                                       Gtk.FileChooserAction.SAVE,
+                                       (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                                       Gtk.STOCK_SAVE, Gtk.ResponseType.OK))
 
         self.add_filters(dialog)
 
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
-            print("Save clicked")
+            print "Save clicked"
             filename = dialog.get_filename()
             # TODO this is not the best solution. If the filename
-            # already exists with ".jpg" and I enter the same name
-            # without the extension, it will overwrite without any alert
+            # already exists with ".jpg" and user enter the same name
+            # without the extension, it will overwrite without the file any alert
             if not filename.endswith('.jpg'):
                 filename += '.jpg'
             self.img.save(filename)
-            print("File saved: " + filename)
+            print "File saved: " + filename
 
         elif response == Gtk.ResponseType.CANCEL:
-            print("Cancel clicked")
+            print "Cancel clicked"
 
         dialog.destroy()
 
+    def update_image(self):
+        self.gtkimage.set_from_pixbuf(image2pixbuf(self.img))
 
 def image2pixbuf(im): # From https://gist.github.com/mozbugbox/10cd35b2872628246140
     """Convert Pillow image to GdkPixbuf"""
@@ -169,12 +167,22 @@ def image2pixbuf(im): # From https://gist.github.com/mozbugbox/10cd35b2872628246
     w, h = im.size
     data = GLib.Bytes.new(data)
     pix = GdkPixbuf.Pixbuf.new_from_bytes(data, GdkPixbuf.Colorspace.RGB,
-            False, 8, w, h, w * 3)
+                                          False, 8, w, h, w * 3)
     return pix
 
 def pixbuf2Image(pb):
-    width,height = pb.get_width(),pb.get_height()
-    return Image.fromstring("RGB",(width,height),pb.get_pixels() )
+    width, height = pb.get_width(), pb.get_height()
+    return Image.fromstring("RGB", (width, height), pb.get_pixels())
+
+def is_grayscale(im):
+    pix = im.load()
+    width, height = im.size
+    for i in range(width):
+        for j in range(height):
+            if len(set(pix[i, j])) != 1: # if red, green and blue aren't equal
+                return False
+
+    return True
 
 win = FPIWindow()
 win.connect("delete-event", Gtk.main_quit)
