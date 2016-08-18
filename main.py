@@ -15,7 +15,7 @@ class FPIWindow(Gtk.Window):
     gtkimg = Gtk.Image
 
     def __init__(self):
-        Gtk.Window.__init__(self, title="FPI Pt.1")
+        Gtk.Window.__init__(self, title="FotochoPI")
         self.set_border_width(10)
 
         hbox = Gtk.Box(spacing=6)
