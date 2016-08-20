@@ -133,6 +133,7 @@ class FPIWindow(Gtk.Window):
         for i in range(width):
             for j in range(height):
                 color = int((original_pix[i, j][0]*ntons)/256 * 256/ntons)
+                # TODO remove comment after fixing
                 """print original_pix[i, j][0],
                 print " => ",
                 print color"""
