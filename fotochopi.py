@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, GdkPixbuf
-from gi.repository.GdkPixbuf import Pixbuf, InterpType
+from gi.repository.GdkPixbuf import InterpType
 from PIL import Image
 
 """
@@ -15,11 +16,12 @@ __license__ = "GPL"
 __version__ = "1.0"
 __email__ = "abennemann@inf.ufrgs.br"
 
-# TODO add a loading image while processing the image?
-
 class FPIWindow(Gtk.Window):
     temp_height = 0
     temp_width = 0
+    min_tone = 0
+    max_tone = 255
+    number_of_tones = 255
 
     def __init__(self):
         Gtk.Window.__init__(self, title="FotochoPI")
@@ -54,6 +56,10 @@ class FPIWindow(Gtk.Window):
         button.connect("clicked", self.on_quantization_clicked)
         hbox.pack_start(button, True, True, 0)
 
+        button = Gtk.Button.new_with_mnemonic("_Invert")
+        button.connect("clicked", self.on_invert_clicked)
+        hbox.pack_start(button, True, True, 0)
+
         button = Gtk.Button.new_with_mnemonic("_Save")
         button.connect("clicked", self.on_save_clicked)
         hbox.pack_start(button, True, True, 0)
@@ -63,12 +69,15 @@ class FPIWindow(Gtk.Window):
         #self.gtkimage.connect('draw', self.on_image_resize, window)
         imgbox.add(self.gtkimage)
 
+        # TODO show a loading image while processing the image?
+
     def on_file_clicked(self, widget):
         dialog = Gtk.FileChooserDialog("Please choose a file", self,
                                        Gtk.FileChooserAction.OPEN,
                                        (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                                         Gtk.STOCK_OPEN, Gtk.ResponseType.OK))
 
+        dialog.set_current_folder(os.getcwd())
         self.add_filters(dialog)
 
         response = dialog.run()
@@ -77,6 +86,9 @@ class FPIWindow(Gtk.Window):
             self.img = Image.open(dialog.get_filename())
             self.pix = self.img.load()
             self.update_image()
+            self.min_tone = 0
+            self.number_of_tones = self.max_tone = 255
+
 
         dialog.destroy()
 
@@ -107,6 +119,18 @@ class FPIWindow(Gtk.Window):
 
         self.update_image()
 
+    def on_invert_clicked(self, button):
+        original_img = self.img.copy()
+        original_pix = original_img.load()
+        width, height = self.img.size
+
+        for i in range(width):
+            for j in range(height):
+                red, green, blue = original_pix[i, j]
+                self.pix[i, j] = (255 - red, 255 - green, 255 - blue)
+
+        self.update_image()
+
     def apply_luminance(self):
         original_img = self.img.copy()
         original_pix = original_img.load()
@@ -122,16 +146,28 @@ class FPIWindow(Gtk.Window):
         if not is_grayscale(self.img):
             self.apply_luminance()
 
-        # TODO fazer otimizacao q manuel falou pra evitar que
-        # os extremos sejam usados sem necessidade
         original_img = self.img.copy()
         original_pix = original_img.load()
         width, height = self.img.size
 
+        new_min_tone = self.min_tone
+        new_max_tone = self.max_tone
+
         for i in range(width):
             for j in range(height):
-                color = int((original_pix[i, j][0]*tones)/256 * 256/(tones-1))
+                # Basic Quantization:
+                # color = int((original_pix[i, j][0]*tones)/256 * 256/(tones-1))
+
+                # Enhanced Quantization (discard extreme tones that are not used):
+                tones_range = (self.max_tone - self.min_tone) + 1
+                color = int((original_pix[i, j][0]*tones)/tones_range * tones_range/(tones-1) + self.min_tone)
+                new_min_tone = min(new_min_tone, color)
+                new_max_tone = max(new_max_tone, color)
+
                 self.pix[i, j] = (color, color, color)
+        self.min_tone = new_min_tone
+        self.max_tone = new_max_tone
+        self.number_of_tones = tones
         self.update_image()
 
     def on_luminance_clicked(self, button):
@@ -148,7 +184,6 @@ class FPIWindow(Gtk.Window):
 
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
-            print "Save clicked"
             filename = dialog.get_filename()
             # TODO this is not the best solution. If the filename
             # already exists with ".jpg" and user enter the same name
@@ -157,9 +192,6 @@ class FPIWindow(Gtk.Window):
                 filename += '.jpg'
             self.img.save(filename)
             print "File saved: " + filename
-
-        elif response == Gtk.ResponseType.CANCEL:
-            print "Cancel clicked"
 
         dialog.destroy()
 
@@ -193,15 +225,14 @@ class DialogQuantization(Gtk.Dialog):
 
     def __init__(self, parent):
         Gtk.Dialog.__init__(self, "Quantization", parent, 0,
-            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
              Gtk.STOCK_OK, Gtk.ResponseType.OK))
 
         self.set_default_size(30, 70)
 
         table = Gtk.Table(1, 2, True)
         label = Gtk.Label("Tones: ")
-        # TODO set default value the number of tones the photo currently have
-        adjustment = Gtk.Adjustment(256, 2, 256, 1, 10, 0)
+        adjustment = Gtk.Adjustment(parent.number_of_tones, 2, 256, 1, 10, 0)
         self.spinbutton = Gtk.SpinButton()
         self.spinbutton.set_adjustment(adjustment)
 
