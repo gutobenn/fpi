@@ -3,6 +3,7 @@
 
 import os
 import gi
+import numpy as np
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, GdkPixbuf
 from gi.repository.GdkPixbuf import InterpType
@@ -19,8 +20,6 @@ __email__ = "abennemann@inf.ufrgs.br"
 class FPIWindow(Gtk.Window):
     temp_height = 0
     temp_width = 0
-    min_tone = 0
-    max_tone = 255
     number_of_tones = 255
 
     def __init__(self):
@@ -84,10 +83,9 @@ class FPIWindow(Gtk.Window):
         if response == Gtk.ResponseType.OK:
             print "File selected: " + dialog.get_filename()
             self.img = Image.open(dialog.get_filename())
-            self.pix = self.img.load()
+            self.pix = np.asarray(self.img)
             self.update_image()
-            self.min_tone = 0
-            self.number_of_tones = self.max_tone = 255
+            self.number_of_tones = 255
 
 
         dialog.destroy()
@@ -99,75 +97,39 @@ class FPIWindow(Gtk.Window):
         dialog.add_filter(filter_jpeg)
 
     def on_horizontal_clicked(self, button):
-        original_img = self.img.copy()
-        original_pix = original_img.load()
-        width, height = self.img.size
-        for i in range(width):
-            for j in range(height):
-                self.pix[i, j] = original_pix[width-i-1, j]
-
+        self.pix = np.fliplr(self.pix)
         self.update_image()
 
     def on_vertical_clicked(self, button):
-        original_img = self.img.copy()
-        original_pix = original_img.load()
-        width, height = self.img.size
-
-        for i in range(width):
-            for j in range(height):
-                self.pix[i, j] = original_pix[i, height-j-1]
-
+        self.pix = np.flipud(self.pix)
         self.update_image()
 
     def on_invert_clicked(self, button):
-        original_img = self.img.copy()
-        original_pix = original_img.load()
-        width, height = self.img.size
-
-        for i in range(width):
-            for j in range(height):
-                red, green, blue = original_pix[i, j]
-                self.pix[i, j] = (255 - red, 255 - green, 255 - blue)
-
+        self.pix = 255 - self.pix
         self.update_image()
 
     def apply_luminance(self):
-        original_img = self.img.copy()
-        original_pix = original_img.load()
-        width, height = self.img.size
+        x2 = np.array([0.299, 0.587, 0.114])
+        pix_sum = np.multiply(self.pix, x2).sum(2, dtype=np.uint8)
+        self.pix = np.dstack([pix_sum] * 3)
 
-        for i in range(width):
-            for j in range(height):
-                red, green, blue = original_pix[i, j]
-                cinza = int(0.299*red + 0.587*green + 0.114*blue)
-                self.pix[i, j] = (cinza, cinza, cinza)
+        self.update_image()
 
     def apply_quantization(self, tones):
         if not is_grayscale(self.img):
             self.apply_luminance()
 
-        original_img = self.img.copy()
-        original_pix = original_img.load()
-        width, height = self.img.size
-
-        new_min_tone = self.min_tone
-        new_max_tone = self.max_tone
-
-        for i in range(width):
-            for j in range(height):
-                # Basic Quantization:
-                # color = int((original_pix[i, j][0]*tones)/256 * 256/(tones-1))
-
-                # Enhanced Quantization (discard extreme tones that are not used):
-                tones_range = (self.max_tone - self.min_tone) + 1
-                color = int((original_pix[i, j][0]*tones)/tones_range * tones_range/(tones-1) + self.min_tone)
-                new_min_tone = min(new_min_tone, color)
-                new_max_tone = max(new_max_tone, color)
-
-                self.pix[i, j] = (color, color, color)
-        self.min_tone = new_min_tone
-        self.max_tone = new_max_tone
+        min_tone = self.pix.min()
+        max_tone = self.pix.max()
+        tones_range = (max_tone - min_tone) + 1
         self.number_of_tones = tones
+
+        # Enhanced Quantization (discard extreme tones that are not used):
+        def f(x):
+            return int((x*tones)/tones_range * tones_range/(tones-1) + min_tone)
+        f = np.vectorize(f)
+        self.pix = f(self.pix)
+
         self.update_image()
 
     def on_luminance_clicked(self, button):
@@ -205,8 +167,9 @@ class FPIWindow(Gtk.Window):
         dialog.destroy()
 
     def update_image(self):
-        # TODO Resize if image is bigger than window
+        self.img = Image.fromarray(np.uint8(self.pix))
         pixbuf = image2pixbuf(self.img)
+        # TODO Resize if image is bigger than window
         #self.gtkimage.set_from_pixbuf(pixbuf.scale_simple(200, 200, InterpType.BILINEAR))
         self.gtkimage.set_from_pixbuf(pixbuf)
 
