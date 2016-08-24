@@ -132,10 +132,10 @@ class FPIWindow(Gtk.Window):
         def f(x):
             #result = int((x*tones)/float(256) * tones_range/float(tones-1) + min_tone)
             passo = 256 / float(tones)
-            result = int( int(x / passo) * passo)
-            if result > 255:
-                return 255
-            print result
+            pos = x / passo
+            if (pos - int(pos)) >  passo/2:
+                pos += 1
+            result = int( int(pos) * passo)
             return result
         f = np.vectorize(f)
         self.pix = f(self.pix)
