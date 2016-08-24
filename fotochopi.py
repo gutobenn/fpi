@@ -130,12 +130,11 @@ class FPIWindow(Gtk.Window):
 
         # Enhanced Quantization (discard extreme tones that are not used):
         def f(x):
-            #result = int((x*tones)/float(256) * tones_range/float(tones-1) + min_tone)
-            passo = 256 / float(tones)
+            passo = tones_range / float(tones)
             pos = x / passo
             if (pos - int(pos)) >  passo/2:
                 pos += 1
-            result = clamp(int( int(pos) * passo), 0, 255)
+            result = clamp(int( int(pos) * passo + min_tone), 0, 255)
             return result
         f = np.vectorize(f)
         self.pix = f(self.pix)
