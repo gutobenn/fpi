@@ -63,9 +63,11 @@ class FPIWindow(Gtk.Window):
         button.connect("clicked", self.on_save_clicked)
         hbox.pack_start(button, True, True, 0)
 
+        self.originalgtkimage = Gtk.Image()
         self.gtkimage = Gtk.Image()
         #TODO resize image on window resize
         #self.gtkimage.connect('draw', self.on_image_resize, window)
+        imgbox.add(self.originalgtkimage)
         imgbox.add(self.gtkimage)
 
         # TODO show a loading image while processing the image?
@@ -84,6 +86,8 @@ class FPIWindow(Gtk.Window):
             print "File selected: " + dialog.get_filename()
             self.img = Image.open(dialog.get_filename())
             self.pix = np.asarray(self.img)
+            originalpixbuf = image2pixbuf(self.img)
+            self.originalgtkimage.set_from_pixbuf(originalpixbuf)
             self.update_image()
             self.number_of_tones = 255
 
