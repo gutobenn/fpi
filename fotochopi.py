@@ -135,7 +135,7 @@ class FPIWindow(Gtk.Window):
             pos = x / passo
             if (pos - int(pos)) >  passo/2:
                 pos += 1
-            result = int( int(pos) * passo)
+            result = clamp(int( int(pos) * passo), 0, 255)
             return result
         f = np.vectorize(f)
         self.pix = f(self.pix)
@@ -239,6 +239,8 @@ def is_grayscale(im):
                 return False
 
     return True
+
+def clamp(n, smallest, largest): return max(smallest, min(n, largest))
 
 win = FPIWindow()
 win.connect("delete-event", Gtk.main_quit)
