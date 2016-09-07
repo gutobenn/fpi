@@ -4,6 +4,7 @@
 import os
 import gi
 import numpy as np
+import matplotlib.pyplot as plt
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, GdkPixbuf
 from gi.repository.GdkPixbuf import InterpType
@@ -14,13 +15,14 @@ FotochoPI, a free (as in draft beer) image editor
 """
 __author__ = "Augusto Bennemann"
 __license__ = "GPL"
-__version__ = "1.0"
+__version__ = "2.0"
 __email__ = "abennemann@inf.ufrgs.br"
 
 class FPIWindow(Gtk.Window):
     temp_height = 0
     temp_width = 0
     number_of_tones = 255
+    histogram = [0] * 256
 
     def __init__(self):
         Gtk.Window.__init__(self, title="FotochoPI")
@@ -57,6 +59,10 @@ class FPIWindow(Gtk.Window):
 
         button = Gtk.Button.new_with_mnemonic("_Invert")
         button.connect("clicked", self.on_invert_clicked)
+        hbox.pack_start(button, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic("_Show Histogram")
+        button.connect("clicked", self.on_histogram_clicked)
         hbox.pack_start(button, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic("_Save")
@@ -111,6 +117,22 @@ class FPIWindow(Gtk.Window):
     def on_invert_clicked(self, button):
         self.pix = 255 - self.pix
         self.update_image()
+
+    def on_histogram_clicked(self, button):
+        self.calculate_histogram()
+        ind = np.arange(256)
+        plt.xlim(0, 255)
+        plt.bar(ind, self.histogram)
+        plt.show()
+
+
+    def calculate_histogram(self):
+        if not is_grayscale(self.img):
+            self.apply_luminance()
+
+        self.histogram[100] = 50
+        self.histogram[101] = 100
+        self.histogram[80] = 80
 
     def apply_luminance(self):
         x2 = np.array([0.299, 0.587, 0.114])
