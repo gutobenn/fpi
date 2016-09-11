@@ -23,6 +23,8 @@ class FPIWindow(Gtk.Window):
     temp_width = 0
     number_of_tones = 255
     histogram = [0] * 256
+    cumulative_histogram = [0] * 256
+    histogram_calculated = False
 
     def __init__(self):
         Gtk.Window.__init__(self, title="FotochoPI")
@@ -65,6 +67,26 @@ class FPIWindow(Gtk.Window):
         button.connect("clicked", self.on_histogram_clicked)
         hbox.pack_start(button, True, True, 0)
 
+        button = Gtk.Button.new_with_mnemonic("_Brightness")
+        button.connect("clicked", self.on_brightness_clicked)
+        hbox.pack_start(button, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic("_Contrast")
+        button.connect("clicked", self.on_contrast_clicked)
+        hbox.pack_start(button, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic("Histogram _Equalization")
+        button.connect("clicked", self.on_equalization_clicked)
+        hbox.pack_start(button, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic("Rotate -90º")
+        button.connect("clicked", self.on_rotateleft_clicked)
+        hbox.pack_start(button, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic("Rotate 90º")
+        button.connect("clicked", self.on_rotateright_clicked)
+        hbox.pack_start(button, True, True, 0)
+
         button = Gtk.Button.new_with_mnemonic("_Save")
         button.connect("clicked", self.on_save_clicked)
         hbox.pack_start(button, True, True, 0)
@@ -96,6 +118,9 @@ class FPIWindow(Gtk.Window):
             self.originalgtkimage.set_from_pixbuf(originalpixbuf)
             self.update_image()
             self.number_of_tones = 255
+            self.histogram = [0] * 256
+            self.cumulative_histogram = [0] * 256
+            self.histogram_calculated = False
 
 
         dialog.destroy()
@@ -119,20 +144,59 @@ class FPIWindow(Gtk.Window):
         self.update_image()
 
     def on_histogram_clicked(self, button):
-        self.calculate_histogram()
-        ind = np.arange(256)
-        plt.xlim(0, 255)
-        plt.bar(ind, self.histogram)
-        plt.show()
+        if not self.histogram_calculated:
+            self.calculate_histogram()
 
+        self.show_histogram()
 
     def calculate_histogram(self):
         if not is_grayscale(self.img):
             self.apply_luminance()
 
-        self.histogram[100] = 50
-        self.histogram[101] = 100
-        self.histogram[80] = 80
+        shape = self.pix.shape
+        for i in np.ndindex(shape[0], shape[1], 1):
+            color = self.pix[i[0]][i[1]][i[2]]
+            self.histogram[color] += 1.0/(shape[0] * shape[1])
+
+        self.histogram_calculated = True
+
+    def calculate_cumulative_histogram(self):
+        if not self.histogram_calculated:
+            self.calculate_histogram()
+
+        shape = self.pix.shape
+        a = 255.0 / (shape[0] * shape[1])
+        self.cumulative_histogram[0] = a * self.histogram[0]
+        for i in range(1, 256):
+            self.cumulative_histogram[i] = a * self.histogram[i] + self.cumulative_histogram[i-1]
+            print(self.cumulative_histogram[i])
+
+    def on_equalization_clicked(self, button):
+        if not is_grayscale(self.img):
+            self.apply_luminance()
+
+        self.calculate_cumulative_histogram()
+        self.show_histogram()
+
+        shape = self.pix.shape
+        self.pix.flags.writeable = True
+        print(self.cumulative_histogram[0])
+        for i in np.ndindex(shape[0], shape[1], 1):
+            # TODO improve code and remove this '(shape[0] * shape[1])'
+            self.pix[i[0]][i[1]][0] = self.cumulative_histogram[self.pix[i[0]][i[1]][0]] * (shape[0] * shape[1])
+            self.pix[i[0]][i[1]][1] = self.cumulative_histogram[self.pix[i[0]][i[1]][1]] * (shape[0] * shape[1])
+            self.pix[i[0]][i[1]][2] = self.cumulative_histogram[self.pix[i[0]][i[1]][2]] * (shape[0] * shape[1])
+
+        self.show_histogram()
+        self.update_image()
+
+    def on_rotateleft_clicked(self, button):
+        self.pix = zip(*self.pix)[::-1]
+        self.update_image()
+
+    def on_rotateright_clicked(self, button):
+        self.pix = zip(*self.pix[::-1])
+        self.update_image()
 
     def apply_luminance(self):
         x2 = np.array([0.299, 0.587, 0.114])
@@ -197,12 +261,36 @@ class FPIWindow(Gtk.Window):
 
         dialog.destroy()
 
+    def on_brightness_clicked(self, widget):
+        dialog = DialogBrightness(self)
+        response = dialog.run()
+
+        if response == Gtk.ResponseType.OK:
+            self.pix = clamp(self.pix + dialog.spinbutton.get_value(), 0, 255)
+
+        dialog.destroy()
+
+    def on_contrast_clicked(self, widget):
+        dialog = DialogContrast(self)
+        response = dialog.run()
+
+        if response == Gtk.ResponseType.OK:
+            self.pix = clamp(self.pix * dialog.spinbutton.get_value(), 0, 255)
+
+        dialog.destroy()
+
     def update_image(self):
         self.img = Image.fromarray(np.uint8(self.pix))
         pixbuf = image2pixbuf(self.img)
         # TODO Resize if image is bigger than window
         #self.gtkimage.set_from_pixbuf(pixbuf.scale_simple(200, 200, InterpType.BILINEAR))
         self.gtkimage.set_from_pixbuf(pixbuf)
+
+    def show_histogram(self):
+        ind = np.arange(256)
+        plt.xlim(0, 255)
+        plt.bar(ind, self.histogram)
+        plt.show()
 
     def on_image_resize(self, widget, event, window):
         allocation = widget.get_allocation()
@@ -237,6 +325,49 @@ class DialogQuantization(Gtk.Dialog):
         box.add(table)
         self.show_all()
 
+class DialogBrightness(Gtk.Dialog):
+
+    def __init__(self, parent):
+        Gtk.Dialog.__init__(self, "Brightness", parent, 0,
+                            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+             Gtk.STOCK_OK, Gtk.ResponseType.OK))
+
+        self.set_default_size(30, 70)
+
+        table = Gtk.Table(1, 2, True)
+        label = Gtk.Label("Add: ")
+        adjustment = Gtk.Adjustment(parent.number_of_tones, -255, 255, 0.1, 5.0, 0)
+        self.spinbutton = Gtk.SpinButton(digits=2)
+        self.spinbutton.set_adjustment(adjustment)
+
+        table.attach(label, 0, 1, 0, 1)
+        table.attach(self.spinbutton, 1, 3, 0, 1)
+
+        box = self.get_content_area()
+        box.add(table)
+        self.show_all()
+
+class DialogContrast(Gtk.Dialog):
+
+    def __init__(self, parent):
+        Gtk.Dialog.__init__(self, "Contrast", parent, 0,
+                            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+             Gtk.STOCK_OK, Gtk.ResponseType.OK))
+
+        self.set_default_size(30, 70)
+
+        table = Gtk.Table(1, 2, True)
+        label = Gtk.Label("Multiply by: ")
+        adjustment = Gtk.Adjustment(parent.number_of_tones, 0.1, 255, 0.1, 5.0, 0)
+        self.spinbutton = Gtk.SpinButton(digits=2)
+        self.spinbutton.set_adjustment(adjustment)
+
+        table.attach(label, 0, 1, 0, 1)
+        table.attach(self.spinbutton, 1, 3, 0, 1)
+
+        box = self.get_content_area()
+        box.add(table)
+        self.show_all()
 
 def image2pixbuf(im): # From https://gist.github.com/mozbugbox/10cd35b2872628246140
     """Convert Pillow image to GdkPixbuf"""
