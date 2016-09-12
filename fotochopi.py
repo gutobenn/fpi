@@ -34,10 +34,12 @@ class FPIWindow(Gtk.Window):
         self.add(grid)
 
         hbox = Gtk.Box(spacing=6)
+        hbox2 = Gtk.Box(spacing=6)
         imgbox = Gtk.Box()
         imgbox.set_border_width(0)
         grid.add(hbox)
-        grid.attach_next_to(imgbox, hbox, Gtk.PositionType.BOTTOM, 1, 2)
+        grid.attach_next_to(hbox2, hbox, Gtk.PositionType.BOTTOM, 1, 2)
+        grid.attach_next_to(imgbox, hbox2, Gtk.PositionType.BOTTOM, 1, 2)
 
         button = Gtk.Button.new_with_mnemonic("_Open")
         button.connect("clicked", self.on_file_clicked)
@@ -65,27 +67,39 @@ class FPIWindow(Gtk.Window):
 
         button = Gtk.Button.new_with_mnemonic("_Show Histogram")
         button.connect("clicked", self.on_histogram_clicked)
-        hbox.pack_start(button, True, True, 0)
+        hbox2.pack_start(button, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic("_Brightness")
         button.connect("clicked", self.on_brightness_clicked)
-        hbox.pack_start(button, True, True, 0)
+        hbox2.pack_start(button, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic("_Contrast")
         button.connect("clicked", self.on_contrast_clicked)
-        hbox.pack_start(button, True, True, 0)
+        hbox2.pack_start(button, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic("Histogram _Equalization")
         button.connect("clicked", self.on_equalization_clicked)
-        hbox.pack_start(button, True, True, 0)
+        hbox2.pack_start(button, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic("Rotate -90º")
         button.connect("clicked", self.on_rotateleft_clicked)
-        hbox.pack_start(button, True, True, 0)
+        hbox2.pack_start(button, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic("Rotate 90º")
         button.connect("clicked", self.on_rotateright_clicked)
-        hbox.pack_start(button, True, True, 0)
+        hbox2.pack_start(button, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic("Zoom _In")
+        button.connect("clicked", self.on_zoom_in_clicked)
+        hbox2.pack_start(button, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic("Zoon _Out")
+        button.connect("clicked", self.on_zoom_out_clicked)
+        hbox2.pack_start(button, True, True, 0)
+
+        button = Gtk.Button.new_with_mnemonic("_Convolution")
+        button.connect("clicked", self.on_convolution_clicked)
+        hbox2.pack_start(button, True, True, 0)
 
         button = Gtk.Button.new_with_mnemonic("_Save")
         button.connect("clicked", self.on_save_clicked)
@@ -148,6 +162,7 @@ class FPIWindow(Gtk.Window):
             self.calculate_histogram()
 
         self.show_histogram()
+        plt.show()
 
     def calculate_histogram(self):
         if not is_grayscale(self.img):
@@ -169,7 +184,6 @@ class FPIWindow(Gtk.Window):
         self.cumulative_histogram[0] = a * self.histogram[0]
         for i in range(1, 256):
             self.cumulative_histogram[i] = a * self.histogram[i] + self.cumulative_histogram[i-1]
-            print(self.cumulative_histogram[i])
 
     def on_equalization_clicked(self, button):
         if not is_grayscale(self.img):
@@ -180,14 +194,16 @@ class FPIWindow(Gtk.Window):
 
         shape = self.pix.shape
         self.pix.flags.writeable = True
-        print(self.cumulative_histogram[0])
         for i in np.ndindex(shape[0], shape[1], 1):
             # TODO improve code and remove this '(shape[0] * shape[1])'
             self.pix[i[0]][i[1]][0] = self.cumulative_histogram[self.pix[i[0]][i[1]][0]] * (shape[0] * shape[1])
             self.pix[i[0]][i[1]][1] = self.cumulative_histogram[self.pix[i[0]][i[1]][1]] * (shape[0] * shape[1])
             self.pix[i[0]][i[1]][2] = self.cumulative_histogram[self.pix[i[0]][i[1]][2]] * (shape[0] * shape[1])
+        self.calculate_histogram()
 
         self.show_histogram()
+        plt.show()
+
         self.update_image()
 
     def on_rotateleft_clicked(self, button):
@@ -196,6 +212,34 @@ class FPIWindow(Gtk.Window):
 
     def on_rotateright_clicked(self, button):
         self.pix = zip(*self.pix[::-1])
+        self.update_image()
+
+    def on_zoom_in_clicked(self, button):
+        pix_old = np.copy(self.pix)
+        height, width, rgb = pix_old.shape
+        self.pix = np.zeros((height*2-1, width*2-1, rgb))
+        self.pix.flags.writeable = True
+
+        for i in range(height-1):
+            for j in range(width-1):
+                self.pix[i][2*j] = pix_old[i][j]
+                self.pix[i][2*j-1] = pix_old[i][j]
+
+        pix_old = np.copy(self.pix)
+        self.pix = np.zeros((height*2-1, width*2-1, rgb))
+        for i in range(height-1):
+            for j in range(width*2-1):
+                self.pix[2*i][j] = pix_old[i][j]
+                self.pix[2*i-1][j] = pix_old[i][j]
+
+        # TODO ajustar bordas do loop
+
+        self.update_image()
+
+    def on_zoom_out_clicked(self, button):
+        self.update_image()
+
+    def on_convolution_clicked(self, button):
         self.update_image()
 
     def apply_luminance(self):
@@ -288,9 +332,9 @@ class FPIWindow(Gtk.Window):
 
     def show_histogram(self):
         ind = np.arange(256)
+        plt.figure()
         plt.xlim(0, 255)
         plt.bar(ind, self.histogram)
-        plt.show()
 
     def on_image_resize(self, widget, event, window):
         allocation = widget.get_allocation()
