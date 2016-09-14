@@ -93,7 +93,7 @@ class FPIWindow(Gtk.Window):
         button.connect("clicked", self.on_zoom_in_clicked)
         hbox2.pack_start(button, True, True, 0)
 
-        button = Gtk.Button.new_with_mnemonic("Zoon _Out")
+        button = Gtk.Button.new_with_mnemonic("Zoom _Out")
         button.connect("clicked", self.on_zoom_out_clicked)
         hbox2.pack_start(button, True, True, 0)
 
@@ -215,24 +215,36 @@ class FPIWindow(Gtk.Window):
         self.update_image()
 
     def on_zoom_in_clicked(self, button):
-        pix_old = np.copy(self.pix)
+        pix_old = self.pix.copy()
         height, width, rgb = pix_old.shape
-        self.pix = np.zeros((height*2-1, width*2-1, rgb))
+        self.pix = np.zeros((height*2-1, width*2-1, rgb), dtype=np.int8)
         self.pix.flags.writeable = True
 
+        for i in range(height):
+            for j in range(1,width):
+                #self.pix[2*i][j] = pix_old[i][j]
+                #self.pix[2*i-1][j] = pix_old[i][j]
+                self.pix[i][2*j] = pix_old[i][j]
+                self.pix[i][2*j-1] = np.array((np.array(pix_old[i][j]) + np.array(pix_old[i][j-1])) / 2, dtype=np.uint8)
+                #self.pix[i][2*j-1] = [int((x + y)/2) for x, y in zip(pix_old[i][j], pix_old[i][j-1])]
+                #if self.pix[i][2*j][0] < 0:
+                #    print(self.pix[i][2*j], pix_old[i][j], pix_old[i][j-1], self.pix[i][2*j-1])
+
+        pix_old = self.pix.copy()
+        self.pix = np.zeros((height*2-1, width*2-1, rgb))
+        for i in range(1,height):
+            for j in range(width*2-1):
+                self.pix[2*i][j] = pix_old[i][j]
+                self.pix[2*i-1][j] = np.array((np.array(pix_old[i][j]) + np.array(pix_old[i-1][j])) / 2, dtype=np.uint8)
+
+        """
         for i in range(height-1):
             for j in range(width-1):
                 self.pix[i][2*j] = pix_old[i][j]
-                self.pix[i][2*j-1] = pix_old[i][j]
-
-        pix_old = np.copy(self.pix)
-        self.pix = np.zeros((height*2-1, width*2-1, rgb))
-        for i in range(height-1):
-            for j in range(width*2-1):
-                self.pix[2*i][j] = pix_old[i][j]
-                self.pix[2*i-1][j] = pix_old[i][j]
-
-        # TODO ajustar bordas do loop
+                #self.pix[i][2*j+1] = (np.array(pix_old[i][j]) + np.array(pix_old[i][j+1])) / 2
+                #self.pix[2*i+1][j] = (np.array(pix_old[i][j]) + np.array(pix_old[i+1][j])) / 2
+                #self.pix[2*i+1][2*j+1] = (np.array(pix_old[i][j]) + np.array(pix_old[i][j+1]) + np.array(pix_old[i+1][j]) + np.array(pix_old[i+1][j+1])) / 4
+        """
 
         self.update_image()
 
@@ -240,6 +252,62 @@ class FPIWindow(Gtk.Window):
         self.update_image()
 
     def on_convolution_clicked(self, button):
+        if not is_grayscale(self.img):
+            self.apply_luminance()
+
+        pix_old = self.pix.copy()
+
+        kernel_gaussian = np.array([[0.0625,0.125,0.0625],
+                                [0.125,0.25,0.125],
+                                [0.0625,0.125,0.0625]])
+
+        kernel_laplacian = np.array([[0., -1., 0.],
+                                [-1., 4., -1.],
+                                [0., -1., 0.]])
+
+        kernel_passa_altas = np.array([[-1., -1., -1.],
+                                [-1., 8., -1.],
+                                [-1., -1., -1.]])
+
+        kernel_prewitt_hx = np.array([[-1., 0., 1.],
+                                [-1., 0., 1.],
+                                [-1., 0., 1.]])
+
+        kernel_prewitt_hx_hy = np.array([[-1., -1., -1.],
+                                [0., 0., 0.],
+                                [1., 1., 1.]])
+
+        kernel_sobel_hx = np.array([[-1., 0., 1.],
+                                [-2., 0., 2.],
+                                [-1., 0., 1.]])
+
+        kernel_sobel_hy = np.array([[-1., -2., -1.],
+                                [0., 0., 0.],
+                                [1., 2., 1.]])
+
+        kernel = kernel_sobel_hy
+        kernel = np.rot90(kernel,2) # rotate kernel 180º
+
+        height, width, rgb = self.pix.shape
+        self.pix.flags.writeable = True
+
+        for i in range(1,height-1):
+            for j in range(1,width-1):
+                sum = 0.
+                neighbors = pix_old[i-1:i+2,j-1:j+2,0]
+
+                resultado = np.zeros((3,3))
+                for (rr,cc), value in np.ndenumerate(neighbors):
+                    sum += neighbors[rr,cc] * kernel[rr,cc]
+                    resultado[rr,cc] = neighbors[rr,cc] * kernel[rr,cc]
+
+                new_value = clamp(127 + int(sum), 0, 255)
+                self.pix[i][j] = (new_value, new_value, new_value)
+
+        # TODO somar 127 em alguns
+        # TODO Interface de selecao dos numeros
+        # TODO e bordars?
+
         self.update_image()
 
     def apply_luminance(self):
@@ -310,7 +378,11 @@ class FPIWindow(Gtk.Window):
         response = dialog.run()
 
         if response == Gtk.ResponseType.OK:
-            self.pix = clamp(self.pix + dialog.spinbutton.get_value(), 0, 255)
+            def f(x):
+                return clamp(x + dialog.spinbutton.get_value(), 0, 255)
+            f = np.vectorize(f)
+            self.pix = f(self.pix)
+            self.update_image()
 
         dialog.destroy()
 
@@ -319,9 +391,14 @@ class FPIWindow(Gtk.Window):
         response = dialog.run()
 
         if response == Gtk.ResponseType.OK:
-            self.pix = clamp(self.pix * dialog.spinbutton.get_value(), 0, 255)
+            def f(x):
+                return clamp(x * dialog.spinbutton.get_value(), 0, 255)
+            f = np.vectorize(f)
+            self.pix = f(self.pix)
+            self.update_image()
 
         dialog.destroy()
+
 
     def update_image(self):
         self.img = Image.fromarray(np.uint8(self.pix))
