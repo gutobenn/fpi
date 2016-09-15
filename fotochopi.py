@@ -249,64 +249,60 @@ class FPIWindow(Gtk.Window):
         self.update_image()
 
     def on_zoom_out_clicked(self, button):
-        self.update_image()
+        dialog = DialogZoomOut(self)
+        response = dialog.run()
+
+        if response == Gtk.ResponseType.OK:
+            pix_old = self.pix.copy()
+            old_height, old_width, old_rgb = self.pix.shape
+            sx, sy = dialog.sx.get_value(), dialog.sy.get_value()
+            self.pix = np.zeros((int(old_height/sy), int(old_width/sx), old_rgb), dtype=np.int8)
+            height, width, rgb = self.pix.shape
+            self.pix.flags.writeable = True
+
+            for i in range(height):
+                for j in range(1,width):
+                    self.pix[i][j] = pix_old[int(i*sy),int(j*sx)]
+
+            self.update_image()
+
+        dialog.destroy()
 
     def on_convolution_clicked(self, button):
-        if not is_grayscale(self.img):
-            self.apply_luminance()
+        dialog = DialogConvolution(self)
+        response = dialog.run()
 
-        pix_old = self.pix.copy()
+        if response == Gtk.ResponseType.OK:
+            if not is_grayscale(self.img):
+                self.apply_luminance()
 
-        kernel_gaussian = np.array([[0.0625,0.125,0.0625],
-                                [0.125,0.25,0.125],
-                                [0.0625,0.125,0.0625]])
+            pix_old = self.pix.copy()
 
-        kernel_laplacian = np.array([[0., -1., 0.],
-                                [-1., 4., -1.],
-                                [0., -1., 0.]])
+            kernel = np.array([[dialog.s_a.get_value(), dialog.s_b.get_value(), dialog.s_c.get_value()],
+                                    [dialog.s_d.get_value(), dialog.s_e.get_value(), dialog.s_f.get_value()],
+                                    [dialog.s_g.get_value(), dialog.s_h.get_value(), dialog.s_i.get_value()]])
+            kernel = np.rot90(kernel,2) # rotate kernel 180º
 
-        kernel_passa_altas = np.array([[-1., -1., -1.],
-                                [-1., 8., -1.],
-                                [-1., -1., -1.]])
+            height, width, rgb = self.pix.shape
+            self.pix.flags.writeable = True
 
-        kernel_prewitt_hx = np.array([[-1., 0., 1.],
-                                [-1., 0., 1.],
-                                [-1., 0., 1.]])
+            for i in range(1,height-1):
+                for j in range(1,width-1):
+                    sum = 0.
+                    neighbors = pix_old[i-1:i+2,j-1:j+2,0]
 
-        kernel_prewitt_hx_hy = np.array([[-1., -1., -1.],
-                                [0., 0., 0.],
-                                [1., 1., 1.]])
+                    resultado = np.zeros((3,3))
+                    for (rr,cc), value in np.ndenumerate(neighbors):
+                        sum += neighbors[rr,cc] * kernel[rr,cc]
+                        resultado[rr,cc] = neighbors[rr,cc] * kernel[rr,cc]
 
-        kernel_sobel_hx = np.array([[-1., 0., 1.],
-                                [-2., 0., 2.],
-                                [-1., 0., 1.]])
+                    if dialog.add_127 is True:
+                        sum += 127
 
-        kernel_sobel_hy = np.array([[-1., -2., -1.],
-                                [0., 0., 0.],
-                                [1., 2., 1.]])
+                    new_value = clamp(int(sum), 0, 255)
+                    self.pix[i][j] = (new_value, new_value, new_value)
 
-        kernel = kernel_sobel_hy
-        kernel = np.rot90(kernel,2) # rotate kernel 180º
-
-        height, width, rgb = self.pix.shape
-        self.pix.flags.writeable = True
-
-        for i in range(1,height-1):
-            for j in range(1,width-1):
-                sum = 0.
-                neighbors = pix_old[i-1:i+2,j-1:j+2,0]
-
-                resultado = np.zeros((3,3))
-                for (rr,cc), value in np.ndenumerate(neighbors):
-                    sum += neighbors[rr,cc] * kernel[rr,cc]
-                    resultado[rr,cc] = neighbors[rr,cc] * kernel[rr,cc]
-
-                new_value = clamp(127 + int(sum), 0, 255)
-                self.pix[i][j] = (new_value, new_value, new_value)
-
-        # TODO somar 127 em alguns
-        # TODO Interface de selecao dos numeros
-        # TODO e bordars?
+        dialog.destroy()
 
         self.update_image()
 
@@ -457,7 +453,7 @@ class DialogBrightness(Gtk.Dialog):
 
         table = Gtk.Table(1, 2, True)
         label = Gtk.Label("Add: ")
-        adjustment = Gtk.Adjustment(parent.number_of_tones, -255, 255, 0.1, 5.0, 0)
+        adjustment = Gtk.Adjustment(0, -255, 255, 0.1, 5.0, 0)
         self.spinbutton = Gtk.SpinButton(digits=2)
         self.spinbutton.set_adjustment(adjustment)
 
@@ -479,12 +475,167 @@ class DialogContrast(Gtk.Dialog):
 
         table = Gtk.Table(1, 2, True)
         label = Gtk.Label("Multiply by: ")
-        adjustment = Gtk.Adjustment(parent.number_of_tones, 0.1, 255, 0.1, 5.0, 0)
+        adjustment = Gtk.Adjustment(1, 0.1, 255, 0.1, 5.0, 0)
         self.spinbutton = Gtk.SpinButton(digits=2)
         self.spinbutton.set_adjustment(adjustment)
 
         table.attach(label, 0, 1, 0, 1)
         table.attach(self.spinbutton, 1, 3, 0, 1)
+
+        box = self.get_content_area()
+        box.add(table)
+        self.show_all()
+
+
+class DialogConvolution(Gtk.Dialog):
+
+    def __init__(self, parent):
+        Gtk.Dialog.__init__(self, "Convolution", parent, 0,
+                            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+             Gtk.STOCK_OK, Gtk.ResponseType.OK))
+
+        self.set_default_size(30, 200)
+
+        table = Gtk.Table(7, 3, True)
+        adjustment_a = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        adjustment_b = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        adjustment_c = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        adjustment_d = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        adjustment_e = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        adjustment_f = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        adjustment_g = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        adjustment_h = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        adjustment_i = Gtk.Adjustment(0, -255.0, 255.0, 0.1, 1.0, 0)
+        self.s_a = Gtk.SpinButton(digits=4)
+        self.s_a.set_adjustment(adjustment_a)
+        self.s_b = Gtk.SpinButton(digits=4)
+        self.s_b.set_adjustment(adjustment_b)
+        self.s_c = Gtk.SpinButton(digits=4)
+        self.s_c.set_adjustment(adjustment_c)
+        self.s_d = Gtk.SpinButton(digits=4)
+        self.s_d.set_adjustment(adjustment_d)
+        self.s_e = Gtk.SpinButton(digits=4)
+        self.s_e.set_adjustment(adjustment_e)
+        self.s_f = Gtk.SpinButton(digits=4)
+        self.s_f.set_adjustment(adjustment_f)
+        self.s_g = Gtk.SpinButton(digits=4)
+        self.s_g.set_adjustment(adjustment_g)
+        self.s_h = Gtk.SpinButton(digits=4)
+        self.s_h.set_adjustment(adjustment_h)
+        self.s_i = Gtk.SpinButton(digits=4)
+        self.s_i.set_adjustment(adjustment_i)
+
+        self.add_127 = False
+
+        table.attach(self.s_a, 0, 1, 0, 1)
+        table.attach(self.s_b, 1, 2, 0, 1)
+        table.attach(self.s_c, 2, 3, 0, 1)
+        table.attach(self.s_d, 0, 1, 1, 2)
+        table.attach(self.s_e, 1, 2, 1, 2)
+        table.attach(self.s_f, 2, 3, 1, 2)
+        table.attach(self.s_g, 0, 1, 2, 3)
+        table.attach(self.s_h, 1, 2, 2, 3)
+        table.attach(self.s_i, 2, 3, 2, 3)
+
+        button = Gtk.CheckButton("Add 127")
+        button.connect("toggled", self.on_add127_toggled)
+        table.attach(button, 0, 2, 3, 4)
+
+        box = self.get_content_area()
+        box.add(table)
+
+        button = Gtk.Button.new_with_label("Gaussian")
+        button.connect("clicked", self.set_kernel, "g")
+        table.attach(button, 0, 1, 4, 5)
+        button = Gtk.Button.new_with_label("Laplacian")
+        button.connect("clicked", self.set_kernel, "lp")
+        table.attach(button, 1, 2, 4, 5)
+        button = Gtk.Button.new_with_label("High Pass")
+        button.connect("clicked", self.set_kernel, "hp")
+        table.attach(button, 2, 3, 4, 5)
+        button = Gtk.Button.new_with_label("Prewitt Hx")
+        button.connect("clicked", self.set_kernel, "px")
+        table.attach(button, 0, 1, 5, 6)
+        button = Gtk.Button.new_with_label("Prewitt Hx Hy")
+        button.connect("clicked", self.set_kernel, "pxy")
+        table.attach(button, 1, 2, 5, 6)
+        button = Gtk.Button.new_with_label("Sobel Hx")
+        button.connect("clicked", self.set_kernel, "shx")
+        table.attach(button, 2, 3, 5, 6)
+        button = Gtk.Button.new_with_label("Sobel Hy")
+        button.connect("clicked", self.set_kernel, "shy")
+        table.attach(button, 0, 1, 6, 7)
+
+        self.show_all()
+
+    def set_kernel(self, button, label):
+        kernel = np.zeros((3,3))
+
+        if label is 'g':
+            kernel = np.array([[0.0625,0.125,0.0625],
+                                [0.125,0.25,0.125],
+                                [0.0625,0.125,0.0625]])
+        elif label is 'lp':
+            kernel = np.array([[0., -1., 0.],
+                                [-1., 4., -1.],
+                                [0., -1., 0.]])
+        elif label is 'hp':
+            kernel = np.array([[-1., -1., -1.],
+                                [-1., 8., -1.],
+                                [-1., -1., -1.]])
+        elif label is 'px':
+            kernel = np.array([[-1., 0., 1.],
+                                [-1., 0., 1.],
+                                [-1., 0., 1.]])
+        elif label is 'pxy':
+            kernel = np.array([[-1., -1., -1.],
+                                [0., 0., 0.],
+                                [1., 1., 1.]])
+        elif label is 'shx':
+            kernel = np.array([[-1., 0., 1.],
+                                [-2., 0., 2.],
+                                [-1., 0., 1.]])
+        elif label is 'shy':
+            kernel = np.array([[-1., -2., -1.],
+                                [0., 0., 0.],
+                                [1., 2., 1.]])
+
+        fields = (self.s_a, self.s_b, self.s_c, self.s_d, self.s_e, self.s_f, self.s_g, self.s_h, self.s_i)
+
+        for i, v in enumerate(kernel.flat):
+            fields[i].set_value(v)
+
+    def on_add127_toggled(self, button):
+        if button.get_active():
+            self.add_127 = True
+        else:
+            self.add_127 = False
+
+class DialogZoomOut(Gtk.Dialog):
+
+    def __init__(self, parent):
+        Gtk.Dialog.__init__(self, "Zoom Out", parent, 0,
+                            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+             Gtk.STOCK_OK, Gtk.ResponseType.OK))
+
+        self.set_default_size(30, 100)
+
+        table = Gtk.Table(1, 3, True)
+        label_sx = Gtk.Label("Sx: ")
+        label_sy = Gtk.Label("Sy: ")
+        adjustment_sx = Gtk.Adjustment(2, 1, 10, 1, 2, 0)
+        adjustment_sy = Gtk.Adjustment(2, 1, 10, 1, 2, 0)
+        self.sx = Gtk.SpinButton()
+        self.sx.set_adjustment(adjustment_sx)
+        self.sy = Gtk.SpinButton()
+        self.sy.set_adjustment(adjustment_sy)
+
+        table.attach(label_sx, 0, 1, 0, 1)
+        table.attach(self.sx, 1, 3, 0, 1)
+        table.attach(label_sy, 0, 1, 1, 2)
+        table.attach(self.sy, 1, 3, 1, 2)
+
+
 
         box = self.get_content_area()
         box.add(table)
@@ -504,6 +655,7 @@ def pixbuf2Image(pb):
     return Image.fromstring("RGB", (width, height), pb.get_pixels())
 
 def is_grayscale(im):
+    # TODO this method could use an variable to save current state. If already checked image colors, then doesn't need to check again.
     pix = im.load()
     width, height = im.size
     for i in range(width):
